@@ -28,17 +28,17 @@ class Card:
 
     def mana_costs(self) -> dict[Mana, int]:
         return {k: v for k, v in self.costs_mana}
-    
+
     def mana_makes(self) -> dict[Mana, int]:
         return {k: v for k, v in self.makes_mana}
-    
+
     def amount_of_mana_produced(self, m: Mana) -> int:
         mana_makes = self.mana_makes()
         return mana_makes.get(m, 0) + mana_makes.get(Mana.ANY, 0)
 
     def __repr__(self):
         return self.__class__.__name__
-    
+
 
 @dataclass
 class SampleResult:
@@ -185,7 +185,7 @@ def mana_costs_covered(mana_pool: dict[Mana, int], mana_costs: dict[Mana, int]):
             consumed_mana[Mana.ANY] -= amount_required
         else:
             consumed_mana[mana] -= amount_required
-    
+
     generic_mana_to_fullfill = mana_to_fulfill.get(Mana.ANY, 0)
     return sum(consumed_mana.values()) >= generic_mana_to_fullfill
 
@@ -236,10 +236,10 @@ class ManaGenerator:
                 used_of_type = min(any_mana_left_to_spend, mana_left_of_type)
                 mana_pool[mana_type] -= used_of_type
                 any_mana_left_to_spend -= used_of_type
-        
+
         assert all([v >= 0 for v in mana_pool.values()])
 
-                    
+
 
         for mana, produced in card.makes_mana:
             if mana in mana_pool:
@@ -258,7 +258,7 @@ class ManaGenerator:
                 self._cast(card, mana_pool)
                 current_cards.remove(card)
                 yield card, copy(mana_pool)
-    
+
     def run(self, opening_hand):
         relevant_cards = [card for card in opening_hand if len(card.makes_mana) > 0]
         if self.mana_priority is not None:
@@ -274,7 +274,7 @@ class ManaGenerator:
                 last_mana_pool = copy(mana_pool)
                 mana_priority_cards.remove(card)
                 yield card, mana_pool
-            
+
             remaining_cards = [card for card in mana_priority_cards if not card.is_land] + remaining_cards
             yield from self._run(remaining_cards, last_mana_pool)
         else:
@@ -324,9 +324,14 @@ class NecroDeckSample:
             not self.hand_can_produce_mana(mana_dict, staging_hand=try_hand)
             and len(artifact_mana_sources) > 0
         ):
-            try_hand.append(artifact_mana_sources.pop())
+            next_artifact_source = artifact_mana_sources[-1]
+            if not next_artifact_source.is_land:
+                artifact_mana_sources.pop()
+            try_hand.append(next_artifact_source)
 
-        return len(artifact_mana_sources) > 0
+        copy_6b = copy(mana_dict)
+        copy_6b[Mana.BLACK] += 3
+        return len(artifact_mana_sources) > 0 or self.hand_can_produce_mana(copy_6b)
 
     def opening_hand_enables_necrodominance(self):
         return self.in_hand(Necrodominance, 1) and self.hand_can_produce_mana(
@@ -346,7 +351,7 @@ class NecroDeckSample:
 
     def can_mulligan(self):
         # the next mulligan leaves us with more than 2 cards
-        return 7 - self.mulligans + 1 > 2
+        return 7 - self.mulligans > 2
 
     def get_best_initial_mana(self):
         def score_card(card):
@@ -388,7 +393,7 @@ class NecroDeckSample:
             cards_to_cover_costs.append(card)
             if mana_costs_covered(mana_pool, costs):
                 return cards_to_cover_costs
-        
+
         return []
 
 
@@ -458,7 +463,7 @@ class NecroDeckSample:
         while cards_available > 0:
             self.hand.append(self.deck.pop())
             cards_available -= 1
-        
+
         self.hand_history.append(copy(self.hand))
         self.mulligans += 1
 
@@ -544,7 +549,7 @@ tony_decklist = [
 original_tony = copy(tony_decklist)
 
 
-n_trials = 10000
+n_trials = 50000
 
 results = []
 
@@ -565,6 +570,7 @@ print(f"necro hit rate: {necro_hit_rate}")
 
 def get_deck_post_win(result):
     original_deck = original_tony[::]
+
     last_hand = result.hand_history[-1]
     new_hand = last_hand[::]
     cards_to_remove = [card for card in last_hand if isinstance(card, Necrodominance) or len(card.makes_mana) > 0]
@@ -589,7 +595,8 @@ def get_deck_post_win(result):
             deck_dict[deck_print.__class__.__name__] += 1
         original_deck.remove(card)
         new_hand.remove(card)
-    
+
+    random.shuffle(original_deck)
     return original_deck, new_hand
 
 
@@ -602,49 +609,92 @@ class PostNecroResult:
     stack: list[Card]
 
 def estimate_post_necro_win(deck, new_hand, cards_to_draw = 19):
-    random.shuffle(deck)
     necro_stack = new_hand + deck[:cards_to_draw]
+    deck = deck[cards_to_draw:]
     get_counts = defaultdict(int)
     for card in necro_stack:
         get_counts[card.__class__.__name__] += 1
     win_detected = True
     if (get_counts.get("Beseech", 0) + get_counts.get("Tendrils", 0)) < 1:
         win_detected = False
-    if get_counts.get("Manamorphose", 0) < 1:
+    if get_counts.get("Manamorphose", 0) < 1 and get_counts.get("WildCantor", 0) < 1:
         win_detected = False
     guides = get_counts.get("ElvishSpiritGuide", 0) + get_counts.get("SimianSpiritGuide", 0) + get_counts.get("SummonersPact", 0)
     if guides < 2:
         win_detected = False
     if get_counts.get("BorneOnAWind", 0) < 1:
         win_detected = False
-    if get_counts.get("Tendrils", 0) < 1 and (get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 4)):
+    if get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 4) and (get_counts.get("Petal", 0) < 1):
         win_detected = False
     if win_detected == False:
-        valakut_reattempt = get_counts.get("ValakutAwakening", 0) > 0 and ((guides >= 3 and (get_counts.get("Manamorphose", 0) > 0 or get_counts.get("SimianSpiritGuide", 0) > 0) or (get_counts.get("BorneOnAWind", 0) > 0)))
+        valakut_reattempt = get_counts.get("ValakutAwakening", 0) > 0 and ((guides >= 3 and (get_counts.get("Manamorphose", 0) > 0 or get_counts.get("SimianSpiritGuide", 0) > 0) or (get_counts.get("SummonersPact", 0) and SimianSpiritGuide() in deck)))
         if valakut_reattempt:
-            guides_to_remove = 2
-            elvish_guides_left = len([card for card in necro_stack if isinstance(card, ElvishSpiritGuide)])
-            while guides_to_remove > 0:
-                if elvish_guides_left > 0:
-                    elvish_guides_left -= 1
-                    guides_to_remove -= 1
+            guides_scored = [card for card in necro_stack if card.__class__.__name__ in ["ElvishSpiritGuide", "SimianSpiritGuide", "SummonersPact"]]
+            red_mana = (get_counts.get("Manamorphose", 0) > 0)
+            scores = {
+                "SummonersPact": 2,
+                "SimianSpiritGuide": 1 if red_mana else 0,
+                "ElvishSpiritGuide": 0 if red_mana else 1,
+            }
+            guides_scored = [(card, scores[card.__class__.__name__]) for card in guides_scored]
+            guide_scored = sorted(guides_scored, key=lambda x: x[1])
+            guides = [card for card, score in guide_scored]
+            mana_paid = 0
+            for guide in guides:
+                if mana_paid >= 3:
+                    break
+                if guide.__class__.__name__ == "SimianSpiritGuide":
+                    red_mana = True
+                    mana_paid += 1
+                    necro_stack.remove(SimianSpiritGuide())
+                elif guide.__class__.__name__ == "SummonersPact":
+                    necro_stack.remove(SummonersPact())
+                    if SimianSpiritGuide() in deck:
+                        mana_paid += 1
+                        red_mana = True
+                        deck.remove(SimianSpiritGuide())
+                    elif ElvishSpiritGuide() in deck:
+                        mana_paid += 1
+                        deck.remove(ElvishSpiritGuide())
                 else:
-                    guides_to_remove -= 1
+                    mana_paid += 1
+                    necro_stack.remove(ElvishSpiritGuide())
+
+            if mana_paid < 3 or not red_mana:
+                return PostNecroResult(won=False, stack=necro_stack)
+
             cards_that_wed_keep = {
-                "SimianSpiritGuide": 1,
+                "SimianSpiritGuide": 2,
+                "ElvishSpiritGuide": 2,
+                "SummonersPact": 2,
                 "Manamorphose": 1,
+                "WildCantor": 1,
                 "BorneOnAWind": 1,
                 "Tendrils": 1,
             }
             hand_to_keep = []
+            guides_kept = 0
+            fixing = False
+            bottomed = []
             for card in necro_stack:
                 if cards_that_wed_keep.get(card.__class__.__name__, 0) > 0:
                     cards_that_wed_keep[card.__class__.__name__] -= 1
-                    hand_to_keep.append(card)
-                else:
-                    if card in deck:
-                        deck.remove(card)
-            return estimate_post_necro_win(deck, hand_to_keep, 19 - len(hand_to_keep))
+                    if card.__class__.__name__ in ["SimianSpiritGuide", "ElvishSpiritGuide", "SummonersPact"]:
+                        if guides_kept > 2:
+                            bottomed.append(card)
+                            continue
+                        guides_kept += 1
+                        hand_to_keep.append(card)
+                    if card.__class__.__name__ in {"Manamorphose", "WildCantor"}:
+                        if not fixing:
+                            hand_to_keep.append(card)
+                            fixing = True
+                    else:
+                        hand_to_keep.append(card)
+                if card in deck:
+                    bottomed.append(card)
+            random.shuffle(bottomed)
+            return estimate_post_necro_win(deck + bottomed, hand_to_keep, 19 - len(hand_to_keep))
     return PostNecroResult(won=win_detected, stack=necro_stack)
 
 print("estimating post necro win percentage")
