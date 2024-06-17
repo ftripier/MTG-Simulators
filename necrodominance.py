@@ -544,7 +544,7 @@ tony_decklist = [
 original_tony = copy(tony_decklist)
 
 
-n_trials = 50000
+n_trials = 10000
 
 results = []
 
@@ -601,9 +601,9 @@ class PostNecroResult:
     won: bool
     stack: list[Card]
 
-def estimate_post_necro_win(deck, new_hand):
+def estimate_post_necro_win(deck, new_hand, cards_to_draw = 19):
     random.shuffle(deck)
-    necro_stack = new_hand + deck[:19]
+    necro_stack = new_hand + deck[:cards_to_draw]
     get_counts = defaultdict(int)
     for card in necro_stack:
         get_counts[card.__class__.__name__] += 1
@@ -617,7 +617,7 @@ def estimate_post_necro_win(deck, new_hand):
         win_detected = False
     if get_counts.get("BorneOnAWind", 0) < 1:
         win_detected = False
-    if get_counts.get("Tendrils", 0) < 1 and get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and get_counts.get("Petal", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 4):
+    if get_counts.get("Tendrils", 0) < 1 and (get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 4)):
         win_detected = False
     if win_detected == False:
         valakut_reattempt = get_counts.get("ValakutAwakening", 0) > 0 and ((guides >= 3 and (get_counts.get("Manamorphose", 0) > 0 or get_counts.get("SimianSpiritGuide", 0) > 0) or (get_counts.get("BorneOnAWind", 0) > 0)))
@@ -644,7 +644,7 @@ def estimate_post_necro_win(deck, new_hand):
                 else:
                     if card in deck:
                         deck.remove(card)
-            return estimate_post_necro_win(deck, hand_to_keep)
+            return estimate_post_necro_win(deck, hand_to_keep, 19 - len(hand_to_keep))
     return PostNecroResult(won=win_detected, stack=necro_stack)
 
 print("estimating post necro win percentage")
