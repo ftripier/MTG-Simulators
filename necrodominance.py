@@ -18,7 +18,6 @@ class Mana(Enum):
 @dataclass(repr=False)
 class Card:
     is_artifact: bool = False
-    produces_mana: FrozenSet[tuple[Mana, int]] = frozenset([])
     is_land: bool = False
     initial_mana: bool = False
     is_protection: bool = False
@@ -31,9 +30,10 @@ class Card:
     
     def mana_makes(self) -> dict[Mana, int]:
         return {k: v for k, v in self.makes_mana}
-
-    def amount_of_mana_produced(self, mana_type: Mana):
-        return sum([v for k, v in self.produces_mana if k in {mana_type, Mana.ANY}])
+    
+    def amount_of_mana_produced(self, m: Mana) -> int:
+        mana_makes = self.mana_makes()
+        return mana_makes.get(m, 0) + mana_makes.get(Mana.ANY, 0)
 
     def __repr__(self):
         return self.__class__.__name__
@@ -61,7 +61,6 @@ class Necrodominance(Card):
 class Vault(Card):
     is_artifact: bool = True
     is_land: bool = True
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.BLACK, 1)])
     initial_mana: bool = True
     makes_mana: FrozenSet[Mana] = frozenset([(Mana.BLACK, 1)])
 
@@ -69,7 +68,6 @@ class Vault(Card):
 @dataclass(repr=False)
 class GemstoneMine(Card):
     is_land: bool = True
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.ANY, 1)])
     initial_mana: bool = True
     makes_mana: FrozenSet[Mana] = frozenset([(Mana.ANY, 1)])
 
@@ -77,7 +75,6 @@ class GemstoneMine(Card):
 @dataclass(repr=False)
 class Petal(Card):
     is_artifact: bool = True
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.ANY, 1)])
     initial_mana: bool = True
     makes_mana: FrozenSet[Mana] = frozenset([(Mana.ANY, 1)])
 
@@ -111,7 +108,6 @@ class BorneOnAWind(Card): ...
 
 @dataclass(repr=False)
 class CabalRitual(Card):
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.BLACK, 1)])
     initial_mana: bool = False
     costs_mana: FrozenSet[Mana] = frozenset([
         (Mana.ANY, 1), (Mana.BLACK, 1)
@@ -122,7 +118,6 @@ class CabalRitual(Card):
 
 @dataclass(repr=False)
 class DarkRitual(Card):
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.BLACK, 2)])
     initial_mana: bool = False
     costs_mana: FrozenSet[Mana] = frozenset([(Mana.BLACK, 1)])
     makes_mana: FrozenSet[Mana] = frozenset([(Mana.BLACK, 3)])
@@ -137,14 +132,12 @@ class Manamorphose(Card):
 
 @dataclass(repr=False)
 class SimianSpiritGuide(Card):
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.RED, 1)])
     makes_mana: FrozenSet[Mana] = frozenset([(Mana.RED, 1)])
     initial_mana: bool = True
 
 
 @dataclass(repr=False)
 class ElvishSpiritGuide(Card):
-    produces_mana: FrozenSet[Mana] = frozenset([(Mana.GREEN, 1)])
     makes_mana: FrozenSet[Mana] = frozenset([(Mana.GREEN, 1)])
     initial_mana: bool = True
 
@@ -301,12 +294,12 @@ class NecroDeckSample:
         artifact_mana_sources = [
             card
             for card in self.hand
-            if len(card.produces_mana) > 0 and card.is_artifact
+            if len(card.makes_mana) > 0 and card.is_artifact
         ]
         non_artifact_mana_sources = [
             card
             for card in self.hand
-            if len(card.produces_mana) > 0 and not card.is_artifact
+            if len(card.makes_mana) > 0 and not card.is_artifact
         ]
 
         try_hand = non_artifact_mana_sources
@@ -335,7 +328,8 @@ class NecroDeckSample:
         )
 
     def can_mulligan(self):
-        return self.mulligans < 5
+        # the next mulligan leaves us with more than 2 cards
+        return 7 - self.mulligans + 1 > 2
 
     def get_best_initial_mana(self):
         def score_card(card):
@@ -344,7 +338,7 @@ class NecroDeckSample:
                 score += 1
             if card.is_land:
                 score += 1
-            if card.amount_of_mana_produced(Mana.BLACK) > 0:
+            if card.mana_makes().get(Mana.BLACK, 0) + card.mana_makes().get(Mana.ANY, 0) > 0:
                 score += 1
             return score
         scored = [
@@ -419,9 +413,9 @@ class NecroDeckSample:
         if wincon is not None and cards_kept < cards_we_can_keep:
             cards_kept += 1
             acceleration_cards = self.cards_to_cover_costs(wincon)
-            acceleration_cards = acceleration_cards[: cards_we_can_keep - cards_kept]
             if initial_mana in acceleration_cards:
                 acceleration_cards.remove(initial_mana)
+            acceleration_cards = acceleration_cards[: cards_we_can_keep - cards_kept]
             cards_kept += len(acceleration_cards)
         if len(acceleration_cards) > 0 and cards_kept < cards_we_can_keep:
             remaining_cards = cards_we_can_keep - cards_kept
