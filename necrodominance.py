@@ -544,7 +544,7 @@ tony_decklist = [
 original_tony = copy(tony_decklist)
 
 
-n_trials = 10000
+n_trials = 50000
 
 results = []
 
@@ -617,10 +617,34 @@ def estimate_post_necro_win(deck, new_hand):
         win_detected = False
     if get_counts.get("BorneOnAWind", 0) < 1:
         win_detected = False
-    if get_counts.get("Tendrils", 0) < 1 and get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and get_counts.get("Petal", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 6):
+    if get_counts.get("Tendrils", 0) < 1 and get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and get_counts.get("Petal", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 4):
         win_detected = False
     if win_detected == False:
-        win_detected = get_counts.get("ValakutAwakening", 0) > 0 and guides >= 3 and (get_counts.get("Manamorphose", 0) > 0 or get_counts.get("SimianSpiritGuide", 0) > 0 or get_counts.get("BorneOnAWind", 0) > 0)
+        valakut_reattempt = get_counts.get("ValakutAwakening", 0) > 0 and ((guides >= 3 and (get_counts.get("Manamorphose", 0) > 0 or get_counts.get("SimianSpiritGuide", 0) > 0) or (get_counts.get("BorneOnAWind", 0) > 0)))
+        if valakut_reattempt:
+            guides_to_remove = 2
+            elvish_guides_left = len([card for card in necro_stack if isinstance(card, ElvishSpiritGuide)])
+            while guides_to_remove > 0:
+                if elvish_guides_left > 0:
+                    elvish_guides_left -= 1
+                    guides_to_remove -= 1
+                else:
+                    guides_to_remove -= 1
+            cards_that_wed_keep = {
+                "SimianSpiritGuide": 1,
+                "Manamorphose": 1,
+                "BorneOnAWind": 1,
+                "Tendrils": 1,
+            }
+            hand_to_keep = []
+            for card in necro_stack:
+                if cards_that_wed_keep.get(card.__class__.__name__, 0) > 0:
+                    cards_that_wed_keep[card.__class__.__name__] -= 1
+                    hand_to_keep.append(card)
+                else:
+                    if card in deck:
+                        deck.remove(card)
+            return estimate_post_necro_win(deck, hand_to_keep)
     return PostNecroResult(won=win_detected, stack=necro_stack)
 
 print("estimating post necro win percentage")
