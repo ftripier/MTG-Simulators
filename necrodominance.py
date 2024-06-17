@@ -184,6 +184,18 @@ def mana_costs_covered(mana_pool: dict[Mana, int], mana_costs: dict[Mana, int]):
     generic_mana_to_fullfill = mana_to_fulfill.get(Mana.ANY, 0)
     return sum(consumed_mana.values()) >= generic_mana_to_fullfill
 
+def mana_priority(x: Mana):
+    return {
+        Mana.COLORLESS: 0,
+        Mana.WHITE: 1,
+        Mana.BLUE: 2,
+        Mana.RED: 3,
+        Mana.GREEN: 4,
+        Mana.BLACK: 5,
+        Mana.ANY: 6
+    }[x]
+
+
 class ManaGenerator:
     def __init__(self, mana_priority: Mana = None):
         self.mana_priority = mana_priority
@@ -212,7 +224,7 @@ class ManaGenerator:
         assert all([v >= 0 for v in mana_pool.values()])
         any_mana_left_to_spend = card.mana_costs().get(Mana.ANY, 0)
         if any_mana_left_to_spend > 0:
-            for mana_type in sorted(mana_pool, key=lambda x: x != Mana.ANY):
+            for mana_type in sorted(mana_pool, key=mana_priority):
                 if any_mana_left_to_spend <= 0:
                     break
                 mana_left_of_type = mana_pool[mana_type]
@@ -432,9 +444,6 @@ class NecroDeckSample:
     def handle_mulligan(self):
         self.shuffle_deck()
 
-        if len(self.hand) > 0:
-            self.mulligans += 1
-
         cards_we_can_keep = 7 - self.mulligans
         cards_available = 7
 
@@ -444,6 +453,7 @@ class NecroDeckSample:
             cards_available -= 1
         
         self.hand_history.append(copy(self.hand))
+        self.mulligans += 1
 
         self.keep_best_cards(cards_we_can_keep)
 
@@ -526,7 +536,7 @@ tony_decklist = [
 ]
 
 
-n_trials = 5000
+n_trials = 50000
 
 results = []
 
