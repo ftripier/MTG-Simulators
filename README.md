@@ -1,0 +1,1 @@
+Monte carlo simulators I made to test theories about Magic: the Gathering decks. Please reserve judgements about code quality: with the amount of spare time I have, code like this just gets barfed out in a demented haze.
