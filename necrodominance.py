@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from collections import defaultdict
 from enum import Enum
 from typing import FrozenSet
 from copy import copy
@@ -104,6 +105,10 @@ class Beseech(Card):
 
 @dataclass(repr=False)
 class BorneOnAWind(Card): ...
+
+@dataclass(repr=False)
+class WeatherTheStorm(Card): ...
+
 
 
 @dataclass(repr=False)
@@ -387,10 +392,10 @@ class NecroDeckSample:
         return []
 
 
-    def select_red_acceleration_and_fixing(self, number_of_cards):
+    def select_red_acceleration_and_fixing(self, cards_to_pick_from, number_of_cards):
         acceleration_cards = [
             card
-            for card in self.hand
+            for card in cards_to_pick_from
             if card.amount_of_mana_produced(Mana.RED) > 0 and not card.is_land
         ]
         acceleration_cards = sorted(
@@ -400,15 +405,16 @@ class NecroDeckSample:
         )
         cards_chosen = acceleration_cards[:number_of_cards]
         if len(cards_chosen) < number_of_cards:
-            fixing_cards = [card for card in self.hand if card.fixes]
+            fixing_cards = [card for card in cards_to_pick_from if card.fixes]
             cards_chosen += fixing_cards[: number_of_cards - len(cards_chosen)]
         return cards_chosen
 
-    def select_remaining_cards(self, number_of_cards):
-        protection = [card for card in self.hand if card.is_protection]
+    def select_remaining_cards(self, cards_to_pick_from, number_of_cards):
+        protection = [card for card in cards_to_pick_from if card.is_protection]
         protection = protection[:number_of_cards]
         if len(protection) < number_of_cards:
             return protection + self.select_red_acceleration_and_fixing(
+                cards_to_pick_from,
                 number_of_cards - len(protection)
             )
         return protection
@@ -431,8 +437,9 @@ class NecroDeckSample:
             cards_kept += len(acceleration_cards)
         if len(acceleration_cards) > 0 and cards_kept < cards_we_can_keep:
             remaining_cards = cards_we_can_keep - cards_kept
-
-            rest_of_cards = self.select_remaining_cards(remaining_cards)
+            picked_cards = [initial_mana] + acceleration_cards + [wincon]
+            cards_to_pick_from = [card for card in self.hand if card not in picked_cards]
+            rest_of_cards = self.select_remaining_cards(cards_to_pick_from, remaining_cards)
 
         self.hand = [initial_mana, wincon] + acceleration_cards + rest_of_cards
         self.hand = [card for card in self.hand if card is not None]
@@ -534,9 +541,10 @@ tony_decklist = [
     Chancellor(),
     Chancellor(),
 ]
+original_tony = copy(tony_decklist)
 
 
-n_trials = 50000
+n_trials = 10000
 
 results = []
 
@@ -550,5 +558,75 @@ won_results = [result for result in results if result.won]
 for result in results:
     print(result)
     print("\n")
-print(f"win percentage: {len(won_results) / n_trials}")
+
+necro_hit_rate = len(won_results) / n_trials
+print(f"necro hit rate: {necro_hit_rate}")
+
+
+def get_deck_post_win(result):
+    original_deck = original_tony[::]
+    last_hand = result.hand_history[-1]
+    new_hand = last_hand[::]
+    cards_to_remove = [card for card in last_hand if isinstance(card, Necrodominance) or len(card.makes_mana) > 0]
+    beseeches = len([card for card in last_hand if isinstance(card, Beseech)])
+    if beseeches > 0:
+        remove_beseeches = [card for card in last_hand if isinstance(card, Beseech)]
+        cards_to_remove += remove_beseeches[1:]
+    summoners_pacts = [card for card in last_hand if isinstance(card, SummonersPact)]
+    guides_remaining = len([card for card in original_deck if isinstance(card, ElvishSpiritGuide) ]) - len([card for card in last_hand if isinstance(card, ElvishSpiritGuide)])
+    for pact in summoners_pacts:
+        if guides_remaining > 0:
+            original_deck.remove(ElvishSpiritGuide())
+            guides_remaining -= 1
+        else:
+            original_deck.remove(SimianSpiritGuide())
+
+
+
+    for card in cards_to_remove:
+        deck_dict = defaultdict(int)
+        for deck_print in original_deck:
+            deck_dict[deck_print.__class__.__name__] += 1
+        original_deck.remove(card)
+        new_hand.remove(card)
+    
+    return original_deck, new_hand
+
+
+print("running post necro simulation")
+post_win_decks_and_hands = [get_deck_post_win(result) for result in won_results]
+
+@dataclass
+class PostNecroResult:
+    won: bool
+    stack: list[Card]
+
+def estimate_post_necro_win(deck, new_hand):
+    random.shuffle(deck)
+    necro_stack = new_hand + deck[:19]
+    get_counts = defaultdict(int)
+    for card in necro_stack:
+        get_counts[card.__class__.__name__] += 1
+    win_detected = True
+    if (get_counts.get("Beseech", 0) + get_counts.get("Tendrils", 0)) < 1:
+        win_detected = False
+    if get_counts.get("Manamorphose", 0) < 1:
+        win_detected = False
+    guides = get_counts.get("ElvishSpiritGuide", 0) + get_counts.get("SimianSpiritGuide", 0) + get_counts.get("SummonersPact", 0)
+    if guides < 2:
+        win_detected = False
+    if get_counts.get("BorneOnAWind", 0) < 1:
+        win_detected = False
+    if get_counts.get("Tendrils", 0) < 1 and get_counts.get("DarkRitual", 0) < 1 and get_counts.get("CabalRitual", 0) < 1 and get_counts.get("Petal", 0) < 1 and (get_counts.get("Manamorphose", 0) < 2 and guides < 6):
+        win_detected = False
+    if win_detected == False:
+        win_detected = get_counts.get("ValakutAwakening", 0) > 0 and guides >= 3 and (get_counts.get("Manamorphose", 0) > 0 or get_counts.get("SimianSpiritGuide", 0) > 0 or get_counts.get("BorneOnAWind", 0) > 0)
+    return PostNecroResult(won=win_detected, stack=necro_stack)
+
+print("estimating post necro win percentage")
+post_necro_results = [estimate_post_necro_win(deck, hand) for deck, hand in post_win_decks_and_hands]
+post_necro_percentage = len([result for result in post_necro_results if result.won]) / len(post_necro_results)
+print(f"post necro win percentage: {round(post_necro_percentage * 100, 2)}%")
+
+print(f"Expected T1 wins with necrodominance, without accounting for protection/interaction - {necro_hit_rate} * {post_necro_percentage} = {round(post_necro_percentage * necro_hit_rate * 100, 2)}%")
 
